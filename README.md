@@ -1,2 +1,2 @@
 # SimplePage
-A small WSGI website framework using a flat file system
+A small WSGI / CGI website framework using a flat file system
