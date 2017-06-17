@@ -388,15 +388,25 @@ class WikiParse(object):
                 text = option
 
         # aquire the image location
-        dir = []
-        if target.startswith("_"):
-            shorten = -1
-            for char in target:
-                if char != "_": break
-                shorten += 1
-            dir = self.directory[:-shorten]
-            target = target[shorten+1:]
+        dir = self.directory + [self.name]
+        count = 0
+        for char in target:
+            if char != "_": break
+            count += 1
+
+        target = target[count:]
         target = target.replace("_", "/")
+
+        if count == 0:
+            dir = []
+
+        if count == 1:
+            pass
+
+        if count > 1:
+            count -= 1
+            dir = dir[:-count]
+
         target = "/".join([
             "",
             self.base_dir,
@@ -645,29 +655,29 @@ class SimplePage(object):
 
         modified = []
         for entry in user_data:
-            if entry.count(":") < 6: continue
+            if entry.count(":") != 6: continue
             username, pwd_hash, usermail, rank, session, expires, ip = entry.split(":")
 
             now = time.time()
             expires = float(expires)
             # remove expired sessions:
             if now > expires:
-                session = ""
+                session = " "
                 expires = "0"
-                ip = ""
+                ip = " "
 
             # check if given credentials match a user
             if username == user:
                 pwd = bytes(pwd, encoding="utf-8")
-                pwd_hash = bytes(pwd_hash, encoding="utf-8")
-                if bcrypt.checkpw(pwd, pwd_hash):
+                chk = bytes(pwd_hash, encoding="utf-8")
+                if bcrypt.checkpw(pwd, chk):
                     # found a match ...
 
                     self.data["login"] = True
                     self.data["user"] = user
 
                     # create a new session for this login
-                    new_id = str(uuid.uuid4())
+                    session = new_id = str(uuid.uuid4())
 
                     if perm:
                         valid_for = 86400 * 180
@@ -676,10 +686,10 @@ class SimplePage(object):
                     expires = now + valid_for
 
                     if os.environ.get('HTTP_X_FORWARDED_FOR'):
-                        user_ip = os.environ['HTTP_X_FORWARDED_FOR']
-                        user_ip = user_ip.split(',')[0].strip()
+                        ip = os.environ['HTTP_X_FORWARDED_FOR']
+                        ip = ip.split(',')[0].strip()
                     else:
-                        user_ip = os.environ['REMOTE_ADDR']
+                        ip = os.environ['REMOTE_ADDR']
 
                     # create the session cookie
                     cookie = Cookie()
@@ -694,7 +704,7 @@ class SimplePage(object):
                     err.append(self.msg["e_login"])
 
             # write the (modified) record to the list
-            modified.append(":".join([
+            entry = [
                 username,
                 pwd_hash,
                 usermail,
@@ -702,10 +712,12 @@ class SimplePage(object):
                 session,
                 str(expires),
                 ip
-            ]))
+            ]
+            entry = ":".join(entry) + "\n"
+            modified.append(entry)
 
         userfile = open(path, mode="w", encoding="utf-8")
-        userfile.writelines(user_data)
+        userfile.writelines(modified)
         userfile.close()
 
         # looks like the username does not exists ...
@@ -720,6 +732,7 @@ class SimplePage(object):
         user = self.post.getvalue("user")
         pwd = self.post.getvalue("pwd")
         pwd_check = self.post.getvalue("pwd_check")
+        url = self.post.getvalue("mail")
         mail = self.post.getvalue("mail")
         terms = self.post.getvalue("terms")
 
@@ -762,7 +775,7 @@ class SimplePage(object):
             return
 
         pwd_hash = bcrypt.hashpw(bytes(pwd, encoding="utf-8"), bcrypt.gensalt())
-        user_entry = "{user}:{pwd_hash}:{mail}:reader\n".format(
+        user_entry = "{user}:{pwd_hash}:{mail}:visitor:\n".format(
             user=user,
             pwd_hash=pwd_hash.decode("utf-8"),
             mail=mail,
@@ -1031,21 +1044,27 @@ class SimplePage(object):
             session_id = cookie.split("=")[-1]
             root = os.environ["DOCUMENT_ROOT"]
             base = self.cnf.get("base_dir")
-            sessions = "sessions." + self.cnf["file_ext"]
-            path = os.path.join(root, base, sessions)
-            sessions_file = open(path, "r", encoding="utf-8")
-            sessions = sessions_file.readlines()
-            sessions_file.close()
+            users = "users." + self.cnf["file_ext"]
+            path = os.path.join(root, base, users)
+            user_file = open(path, "r", encoding="utf-8")
+            user_data = user_file.readlines()
+            user_file.close()
 
-            new_sessions = []
-            for session in sessions:
-                if session.count(":") < 3: continue
-                user, stored_id, expires, ip = session.split(":")
-                if stored_id != session_id:
-                    new_sessions.append("".join([user, stored_id, expires, ip]))
+            new_data = []
+            for entry in user_data:
+                if entry.count(":") != 6: continue
+                user, pwd_hash, mail, rank, stored_id, expires, ip = entry.split(":")
+                if stored_id == session_id:
+                    stored_id = " "
+                    expires = "0"
+                    ip = " "
+
+                new_entry = [user, pwd_hash, mail, rank, stored_id, expires, ip]
+                new_entry = ":".join(new_entry) + "\n"
+                new_data.append(new_entry)
 
             sessions_file = open(path, "w", encoding="utf-8")
-            sessions_file.writelines(new_sessions)
+            sessions_file.writelines(new_data)
             sessions_file.close()
 
     def cookie_handler(self):
@@ -1082,7 +1101,6 @@ class SimplePage(object):
                     if self.cnf.get("rank_override"):
                         self.data["user_rank"] = rank.strip()
                     break
-
 
     def check_acl(self):
         """ retrieve ACL for this page or a parent page """
@@ -1600,10 +1618,10 @@ class SimplePage(object):
         # check the users rank
         if self.data.get("rank") not in ["owner", "writer"]:
             if self.data.get("user"):
-                self.e403()
+                self.e403(info="files")
                 return
             else:
-                self.e401()
+                self.e401(info="files")
                 return
 
         form = [
@@ -1755,10 +1773,10 @@ class SimplePage(object):
     def get_content(self):
         if self.data.get("rank") not in ["reader", "commenter", "writer", "owner"]:
             if self.data.get("user"):
-                self.e403()
+                self.e403(info="read")
                 return
             else:
-                self.e401()
+                self.e401(info="read")
                 return
 
         content = []
@@ -2024,7 +2042,7 @@ if __name__ == "__main__":
         page.show_comment_form()
 
     # debug line ..
-    page.content += [page.data.get("rank")]
+    page.content += [os.environ.get("REMOTE_ADDR")]
     page.html_foot()
 
     # serve the page
