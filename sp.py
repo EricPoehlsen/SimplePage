@@ -152,7 +152,6 @@ S_EN = {
     "e_404_body": 'Unfortunatly the server can&amp;t locate a file at this location.',
 }
 
-
 class WikiParse(object):
     def __init__(self, page, content):
         self.debug = {}
@@ -578,7 +577,6 @@ class SimplePage(object):
             os.environ["DOCUMENT_ROOT"],
             base[1:]
         )
-        if os.path.isfile(path): self.data["file_path"] = path
 
         if base.endswith("/"): base = base[:-1]
         *directory, filename = base.split("/")
@@ -605,40 +603,6 @@ class SimplePage(object):
                 self.lang = ext[0]
 
             ext = ext[-1]
-        else:
-            ext = "NONE"
-
-        # setting mime_type
-        mimetypes = {
-            "css": "text/css",
-            "xml": "application/xml",
-            "png": "image/png",
-            "jpg": "image/jpg",
-            "jpeg": "image/jpg",
-            "jpe": "image/jpg",
-            "gif": "image/gif",
-            "tif": "image/tif",
-            "tiff": "image/tif",
-            "txt": "text/plain",
-            "htm": "text/html",
-            "html": "text/html",
-        }
-
-        self.data["mime_type"] = mimetypes.get(ext, "application/octet")
-
-    def file_handler(self):
-        """ serve an existing file like image or whatever"""
-
-        import sys
-        file = open(self.data["file_path"], mode="rb")
-        while True:
-            buffer = file.read(4096)
-            if buffer:
-                sys.stdout.buffer.write(buffer)
-            else:
-                break
-        file.close()
-
 
     def post_handler(self):
         """ handle a post request by the user agent """
@@ -661,7 +625,7 @@ class SimplePage(object):
     def post_login(self):
         """ login in a user with the credentials transmitted via POST """
 
-        # the field data ...
+        # the relevant field data ...
         perm = self.post.getvalue("perm_login")
         user = self.post.getvalue("user")
         pwd = self.post.getvalue("pwd")
@@ -679,9 +643,20 @@ class SimplePage(object):
         user_data = userfile.readlines()
         userfile.close()
 
-        # check if given credentials match a user
+        modified = []
         for entry in user_data:
-            username, pwd_hash, usermail, rank = entry.split(":")
+            if entry.count(":") < 6: continue
+            username, pwd_hash, usermail, rank, session, expires, ip = entry.split(":")
+
+            now = time.time()
+            expires = float(expires)
+            # remove expired sessions:
+            if now > expires:
+                session = ""
+                expires = "0"
+                ip = ""
+
+            # check if given credentials match a user
             if username == user:
                 pwd = bytes(pwd, encoding="utf-8")
                 pwd_hash = bytes(pwd_hash, encoding="utf-8")
@@ -691,31 +666,9 @@ class SimplePage(object):
                     self.data["login"] = True
                     self.data["user"] = user
 
-                    # find the current sessions ...
-                    path = os.path.join(
-                        os.environ["DOCUMENT_ROOT"],
-                        self.cnf["base_dir"],
-                        "sessions." + self.cnf["file_ext"]
-                    )
-                    sessionsfile = open(path, mode="r", encoding="utf-8")
-                    sessions = sessionsfile.readlines()
-                    sessionsfile.close()
-
-                    # create a new session id
-                    new_id = str(uuid.uuid4())
-                    new_sessions = []
-                    now = time.time()
-
-                    # remove invalid sessions
-                    for session in sessions:
-                        if session.count(":") < 3: continue;
-                        session = session.strip()
-                        username, session_id, expires, *ip = session.split(":")
-                        expires = float(expires)
-                        if user != username and expires > now:
-                            new_sessions.append(session)
-
                     # create a new session for this login
+                    new_id = str(uuid.uuid4())
+
                     if perm:
                         valid_for = 86400 * 180
                     else:
@@ -728,20 +681,6 @@ class SimplePage(object):
                     else:
                         user_ip = os.environ['REMOTE_ADDR']
 
-                    new_session = ":".join([
-                        user,
-                        new_id,
-                        str(expires),
-                        user_ip,
-                    ])
-
-                    # store valid sessions
-                    new_sessions.append(new_session)
-                    sessionsfile = open(path, mode="w", encoding="utf-8")
-                    for session in new_sessions:
-                        sessionsfile.write(session + "\n")
-                    sessionsfile.close()
-
                     # create the session cookie
                     cookie = Cookie()
                     cookie["session"] = new_id
@@ -750,16 +689,29 @@ class SimplePage(object):
                     cookie["session"]["domain"] = os.environ["HTTP_HOST"]
                     cookie["session"]["path"] = "/" + self.cnf["base_dir"]
                     self.data["cookie"] = cookie.output()
-                    return
-
+                # user exists but password is wrong ...
                 else:
-                    # user exists but password is wrong ...
                     err.append(self.msg["e_login"])
-                    return
+
+            # write the (modified) record to the list
+            modified.append(":".join([
+                username,
+                pwd_hash,
+                usermail,
+                rank,
+                session,
+                str(expires),
+                ip
+            ]))
+
+        userfile = open(path, mode="w", encoding="utf-8")
+        userfile.writelines(user_data)
+        userfile.close()
 
         # looks like the username does not exists ...
-        err.append(self.msg["e_login"])
-        return
+        if not self.data["login"]:
+            err.append(self.msg["e_login"])
+
 
     def post_register(self):
         """ handle registering of a new user with the given data ..."""
@@ -1113,36 +1065,23 @@ class SimplePage(object):
         if cookie:
             session_id = cookie.split("=")[-1]
 
-            sessions = "sessions." + self.cnf["file_ext"]
             users = "users." + self.cnf["file_ext"]
-            path = os.path.join(root, base, sessions)
-            sessions_file = open(path, "r", encoding="utf-8")
-            sessions = sessions_file.readlines()
-            sessions_file.close()
+            path = os.path.join(root, base, users)
+            user_file = open(path, "r", encoding="utf-8")
+            user_data = user_file.readlines()
+            user_file.close()
 
-            for session in sessions:
-                if session.count(":") < 3: continue
-                user, stored_id, expires, ip = session.split(":")
+            for entry in user_data:
+                if entry.count(":") < 6: continue
+                user, pwd_hash, mail, rank, stored_id, expires, ip = entry.split(":")
                 if stored_id == session_id:
                     self.data["user"] = user
                     self.data["login"] = True
 
                     # set global rank (if enabled)
                     if self.cnf.get("rank_override"):
-
-                        path = os.path.join(root, base, users)
-                        user_file = open(path, "r", encoding="utf-8")
-                        users = user_file.readlines()
-                        user_file.close()
-
-                        self.data["user_rank"] = ""
-                        for user_data in users:
-                            if user_data.count(":") < 3: continue
-
-                            username, pwd_hash, mail, rank = user_data.split(":")
-                            if username == user:
-                                self.data["user_rank"] = rank.strip()
-                                break
+                        self.data["user_rank"] = rank.strip()
+                    break
 
 
     def check_acl(self):
@@ -1243,17 +1182,17 @@ class SimplePage(object):
 
     def headers(self, status="200 OK", cont_type="text/plain"):
         """ printing the header to the http stream """
-        status = "Status: " + status
-        cont_type = "Content-Type: " + cont_type
+        header = "Status: " + status + "\n"
+        header += "Content-Type: " + cont_type + "\n"
 
-        print(status)
-        print(cont_type)
         # setting cookie if login is successful
         login = self.data.get("login")
         cookie = self.data.get("cookie")
         if login and cookie:
-            print(cookie)
-        print()
+            header += cookie + "\n"
+        header += "\n"
+
+        return header
 
     def html_head(self):
         filename = "_header." + self.lang + "." + self.cnf["file_ext"]
@@ -1856,13 +1795,9 @@ class SimplePage(object):
     def get_comments(self):
         """ retrieve comments for this page and add them to the page content"""
 
+        # if the user has insufficient rights leave silently ...
         if self.data.get("rank") not in ["commenter", "writer", "owner"]:
-            if self.data.get("user"):
-                self.e403()
-                return
-            else:
-                self.e401()
-                return
+            return
 
         content = []
         comment_names = "{name}.*.{ext}".format(
@@ -1972,15 +1907,19 @@ class SimplePage(object):
         if self.status != "200 OK":
             return
 
+        title = '<h2>' + self.msg["e_401_title"] + '</h2>'
         text = self.msg["e_401_generic"]
         if info == "read": text = self.msg["e_401_read"]
         if info == "files": text = self.msg["e_401_files"]
         if info == "settings": text = self.msg["e_401_settings"]
+        if info == "comments":
+            text = self.msg["e_401_comments"]
+            title = ""
 
         self.status = "401 Not Authorized"
         self.content += [
             '<div class="main">',
-            '<h2>' + self.msg["e_401_title"] + '</h2>',
+            title,
             '<p>' + text + '</p>',
             '</div>'
         ]
@@ -1992,15 +1931,20 @@ class SimplePage(object):
         if self.status != "200 OK":
             return
 
+
+        title = '<h2>' + self.msg["e_403_title"] + '</h2>'
         text = self.msg["e_403_generic"]
         if info == "read": text = self.msg["e_403_read"]
         if info == "files": text = self.msg["e_403_files"]
         if info == "settings": text = self.msg["e_403_settings"]
+        if info == "comments":
+            title = ""
+            text = self.msg["e_403_comments"]
 
         self.status = "403 Forbidden"
         self.content += [
             '<div class="main">',
-            '<h2>' + self.msg["e_403_title"] + '</h2>',
+            title,
             '<p>' + text + '</p>',
             '</div>'
         ]
@@ -2024,15 +1968,13 @@ class SimplePage(object):
 def test():
     os.environ["DOCUMENT_ROOT"] = "C:/Users/Eric/Documents/Homepages/"
     os.environ["REQUEST_METHOD"] = "GET"
-    os.environ["REQUEST_URI"] = "/site/test.jpg"
+    os.environ["REQUEST_URI"] = "/site/index"
+
 
 if __name__ == "__main__":
     # running test?
     if not os.environ.get("DOCUMENT_ROOT"):
         test()
-
-
-
 
     # initializing the page (Nothing in here must print anything!)
     page = SimplePage()
@@ -2045,52 +1987,47 @@ if __name__ == "__main__":
 
     # do we serve an existing file or generating a file?
 
-    if page.data.get("file_path"):
-        page.headers(status=page.status, cont_type=page.data["mime_type"])
-        page.file_handler()
+    # build the content
+    page.html_head()
+    page.nav_bar()
+    page.lang_selector()
 
-    else:
-        # build the content
-        page.html_head()
-        page.nav_bar()
-        page.lang_selector()
-
-        if os.environ.get("REDIRECT_STATUS") == "403":
-            page.e403()
-        elif page.query[0] == "login":
-            page.show_login_form()
-        elif page.query[0] == "logout":
-            page.show_login_form()
-        elif page.query[0] == "register":
-            page.show_registration_form()
-        elif page.query[0] == "files":
-            page.show_files()
-        elif page.query[0] == "settings":
-            page.show_settings()
-        elif page.query[0] == "test":
-            page.showenv()
-        elif page.query[0] == "parse":
-            page.parse_current()
-            page.get_content()
-            page.get_comments()
-            page.show_comment_form()
-        elif page.query[0] == "edit":
-            if os.environ["REQUEST_METHOD"] == "GET":
-                page.show_edit_form()
-            else:
-                page.get_content()
-                page.get_comments()
-                page.show_comment_form()
+    if os.environ.get("REDIRECT_STATUS") == "403":
+        page.e403()
+    elif page.query[0] == "login":
+        page.show_login_form()
+    elif page.query[0] == "logout":
+        page.show_login_form()
+    elif page.query[0] == "register":
+        page.show_registration_form()
+    elif page.query[0] == "files":
+        page.show_files()
+    elif page.query[0] == "settings":
+        page.show_settings()
+    elif page.query[0] == "test":
+        page.showenv()
+    elif page.query[0] == "parse":
+        page.parse_current()
+        page.get_content()
+        page.get_comments()
+        page.show_comment_form()
+    elif page.query[0] == "edit":
+        if os.environ["REQUEST_METHOD"] == "GET":
+            page.show_edit_form()
         else:
             page.get_content()
             page.get_comments()
             page.show_comment_form()
+    else:
+        page.get_content()
+        page.get_comments()
+        page.show_comment_form()
 
-        # debug line ..
-        page.content += [page.data.get("file_path")]
-        page.html_foot()
+    # debug line ..
+    page.content += [page.data.get("rank")]
+    page.html_foot()
 
-        # serve the page
-        page.headers(status=page.status, cont_type="text/html")
-        for line in page.content:
-            print(line)
+    # serve the page
+    print(page.headers(status=page.status, cont_type="text/html"))
+    for line in page.content:
+        print(line)
