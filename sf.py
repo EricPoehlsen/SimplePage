@@ -103,8 +103,8 @@ class SimpleFile(object):
             user_file.close()
 
             for entry in user_data:
-                if entry.count(":") < 6: continue
-                user, pwd_hash, mail, rank, stored_id, expires, ip = entry.split(":")
+                if entry.count(" ") != 7: continue
+                user, pwd_hash, mail, url, rank, stored_id, expires, *ip = entry.split()
                 if stored_id == session_id:
                     self.data["user"] = user
                     self.data["login"] = True

@@ -15,6 +15,8 @@ from datetime import datetime
 S_DE = {
     "username": "Benutzername:",
     "password": "Passwort:",
+    "password_old": "Altes Passwort:",
+    "password_new": "Neues Passwort:",
     "password_check": "Passwort bestätigen:",
     "mail": "E-Mail Adresse:",
     "login": "Anmelden",
@@ -22,6 +24,7 @@ S_DE = {
     "url": "Deine persönliche Webseite:",
     "files": "Dateien",
     "settings": "Einstellungen",
+    "user_settings": "Benutzerkonto",
     "acl": "Zugriffsberechtigungen",
     "acl_inherit": "ACL von folgender Seite verwenden ...",
     "acl_owner": "Besitzer:",
@@ -37,6 +40,12 @@ S_DE = {
     "spam_challenge": "Bitte gib das {num} Wort an: <i>{words}</i>",
     "spam_nums": ["erste", "zweite", "dritte", "vierte", "fünfte"],
     "send": "Abschicken",
+    "upload": "Hochladen",
+    "delete": "Löschen",
+    "delete_files": "Ausgewählte Dateien löschen",
+    "move_copy_info": "Verschiebe oder kopiere die gewählten Dateien zu folgender Seite:",
+    "move": "Verschieben",
+    "copy": "Kopieren",
     "perm_login": "Angemeldet bleiben.",
     "register": "Registrieren",
     "no_edit": "Bearbeitung nicht möglich!",
@@ -47,6 +56,7 @@ S_DE = {
     "logged_in": 'Du bist derzeit angemeldet als {user}.',
     "logout": 'Du kannst dich natürlich einfach <a href="{url}?logout">abmelden</a>.',
     "to_page": '<p>Weiter zur eigentlichen <a href="{url}">Seite</a>.</p>',
+    "w_weak_pwd": "<b>Du hast ein unsicheres Passwort gewählt!</b></br>",
     "w_locked": "<b>Diese Datei wird seit %d.%m.%Y um %H:%M von {user} bearbeitet. "
         "Möglicherweise wurde die Bearbeitung abgebrochen, es kann hier allerdings "
         "zu einem Bearbeitungskonflikt kommen!</b></br>",
@@ -61,6 +71,8 @@ S_DE = {
     "e_user_badname": "<b>Der Name enthält unzulässige Zeichen.</b></br>",
     "e_user_exists": "<b>Dieses Benutzerkonto kann nicht angelegt werden.</b><br/>",
     "e_mail_exists": "<b>Für diese E-Mail existiert bereits ein Nutzerkonto.</b><br/>",
+    "e_mail_invalid": "<b>Das sieht nicht nach eine gültigen E-Mail-Adresse aus.</b><br/>",
+    "e_url_invalid": "<b>Das sieht nicht nach einer gültigen URL aus.</b><br/>",
     "e_user_registered": "<b>Registrierter Nutzername. Bitte melde dich an, "
         "um mit diesem Namen zu kommentieren.</b></br>",
     "e_pwd_mismatch": "<b>Die angegebenen Passwörter stimmen nicht überein.</b><br/>",
@@ -88,6 +100,8 @@ S_DE = {
 S_EN = {
     "username": "Username:",
     "password": "Password:",
+    "password_old": "Your current password:",
+    "password_new": "Your new password:",
     "password_check": "Confirm password:",
     "mail": "E-mail address:",
     "url": "Your personal webpage:",
@@ -96,6 +110,7 @@ S_EN = {
     "link": '<a href="{url}"{more}>{text}<a></p>',
     "files": "Files",
     "settings": "Settings",
+    "user_settings": "User account settings",
     "acl": "Access Control List",
     "acl_inherit": "Use the ACL from the following page ...",
     "acl_owner": "Owner:",
@@ -111,6 +126,12 @@ S_EN = {
     "spam_challenge": "Please write the {num} word: <i>{words}</i>",
     "spam_nums": ["first", "second", "third", "fourth", "fifth"],
     "send": "Send",
+    "upload": "Upload",
+    "delete_files": "Delete selected files",
+    "delete": "Delete",
+    "move_copy_info": "Move or copy files to the specified target page:",
+    "move": "Move",
+    "copy": "Copy",
     "no_edit": "You can't edit this page!",
     "perm_login": "Stay logged in",
     "user_created": "<b>User account created.</b><br/>",
@@ -120,6 +141,7 @@ S_EN = {
     "to_page": '<p>Continue to the <a href="{url}page">page</a>.</p>',
     "terms": 'I do accept the <a href="/site/impressum.en.html">terms of use</a>.',
     "edit_time": "Last edited on %Y/%m/%d at %I:%M %p",
+    "w_weak_pwd": "<b>Your chosen password appears rather weak.</b></br>",
     "w_locked": "<b>This file was locked by {user} on %Y/%m/%d at %I:%M %p. "
         "Maybe the editing was cancelled, a editing conflict is possible!</b></br>",
     "w_locked_self": "<b>You locked this file for editing on %Y/%m/%d at %I:%M %p."
@@ -131,6 +153,8 @@ S_EN = {
     "e_user_badname": "<b>The chosen name contains illegal characters.</b></br>",
     "e_user_exists": "<b>User account can't be created.</b><br/>",
     "e_mail_exists": "<b>This e-mail address is already registered.</b><br/>",
+    "e_mail_invalid": "<b>That does not look like a valid e-mail address.</b><br/>",
+    "e_url_invalid": "<b>That does not look like a valid url.</b><br/>",
     "e_user_registered": "<b>Registered username. Please login to post with this identity.",
     "e_pwd_mismatch": "<b>Passwords do not match.</b><br/>",
     "e_terms": "<b>You have to accept the terms of use to create an account.</b><br/>",
@@ -154,13 +178,12 @@ S_EN = {
 
 class WikiParse(object):
     def __init__(self, page, content):
-        self.debug = {}
         self.content = content
-        page.data["info"] = []
 
         self.base_dir = page.cnf["base_dir"]
         self.directory = page.directory
         self.name = page.name
+        self.user_rank = page.data.get("user_rank")
 
         # keeping track of opened tags
         self.p = 0
@@ -178,6 +201,16 @@ class WikiParse(object):
         parsed_content = []
 
         for line in self.content:
+
+            # for everyone but global writers and owners
+            # 'unsafe' chars are rewritten to html entities
+            if self.user_rank not in ["writer", "owner"]:
+                line = line.replace("&", "&amp;")
+                line = line.replace("<", "&lt;")
+                line = line.replace(">", "&gt;")
+                line = line.replace("'", "&#39;")
+                line = line.replace('"', "&quot;")
+
             # handling linebreaks
             line = line.replace("\r", "")
             line = line.replace("\n", "")
@@ -328,15 +361,27 @@ class WikiParse(object):
                 text = option
 
         if url_tag.startswith("~WIKI"):
-            dir = []
-            if target.startswith("_"):
-                shorten = -1
-                for char in target:
-                    if char != "_": break
-                    shorten += 1
-                dir = self.directory[:-shorten]
-                target = target[shorten+1:]
+            dir = self.directory + [self.name]
+            count = 0
+            for char in target:
+                if char != "_": break
+                count += 1
+
+            target = target[count:]
             target = target.replace("_", "/")
+
+            if count == 0:
+                dir = []
+
+            if count == 1:
+                if target == "/up":
+                    target = ""
+                    dir = dir[:-1]
+
+            if count > 1:
+                count -= 1
+                dir = dir[:-count]
+
             target = "/".join([
                 "",
                 self.base_dir,
@@ -344,9 +389,15 @@ class WikiParse(object):
                 target
             ])
 
+        if url_tag.startswith("~URL"):
+            meta = 'target="__new" '
+
+            target = target.replace("&amp;", "&")
+
+
         parsed_url = '<a href="{target}" {more}/>{text}</a>'.format(
             target=target,
-            more="",
+            more=meta,
             text=text
         )
         return parsed_url
@@ -623,10 +674,12 @@ class SimplePage(object):
                 self.post_login()
             if self.query[0] == "register":
                 self.post_register()
+            if self.query[0] == "user":
+                self.post_user()
             if self.query[0] == "edit":
                 self.post_edit()
             if self.query[0] == "files":
-                self.post_upload()
+                self.post_files()
             if self.query[0] == "settings":
                 self.post_settings()
             if self.post.getvalue("comment"):
@@ -643,6 +696,11 @@ class SimplePage(object):
         self.data["error"] = err = []
         self.data["login"] = False
 
+        invalid_username = re.findall("[^a-zA-Z0-9]", user)
+        if invalid_username:
+            err.append(self.msg["e_user_badname"])
+            return
+
         # get the user file
         path = os.path.join(
             os.environ["DOCUMENT_ROOT"],
@@ -655,16 +713,16 @@ class SimplePage(object):
 
         modified = []
         for entry in user_data:
-            if entry.count(":") != 6: continue
-            username, pwd_hash, usermail, rank, session, expires, ip = entry.split(":")
+            if entry.count(" ") != 7: continue
+            username, pwd_hash, usermail, userurl, rank, session, expires, ip = entry.split()
 
             now = time.time()
             expires = float(expires)
             # remove expired sessions:
             if now > expires:
-                session = " "
+                session = "-"
                 expires = "0"
-                ip = " "
+                ip = "-"
 
             # check if given credentials match a user
             if username == user:
@@ -708,22 +766,24 @@ class SimplePage(object):
                 username,
                 pwd_hash,
                 usermail,
+                userurl,
                 rank,
                 session,
                 str(expires),
                 ip
             ]
-            entry = ":".join(entry) + "\n"
+            entry = " ".join(entry) + "\n"
             modified.append(entry)
 
-        userfile = open(path, mode="w", encoding="utf-8")
-        userfile.writelines(modified)
-        userfile.close()
+        # write the modified login list on a successful login
+        if modified and self.data["login"]:
+            userfile = open(path, mode="w", encoding="utf-8")
+            userfile.writelines(modified)
+            userfile.close()
 
         # looks like the username does not exists ...
         if not self.data["login"]:
             err.append(self.msg["e_login"])
-
 
     def post_register(self):
         """ handle registering of a new user with the given data ..."""
@@ -732,11 +792,15 @@ class SimplePage(object):
         user = self.post.getvalue("user")
         pwd = self.post.getvalue("pwd")
         pwd_check = self.post.getvalue("pwd_check")
-        url = self.post.getvalue("mail")
+        url = self.post.getvalue("url", "-")
         mail = self.post.getvalue("mail")
         terms = self.post.getvalue("terms")
 
+        self.data["warn"] = warn = []
         self.data["error"] = err = []
+        if not user or not pwd or not pwd_check or not mail or not terms:
+            err.append(self.msg["e_incomplete"])
+            return
 
         # get current users
         path = os.path.join(
@@ -753,9 +817,26 @@ class SimplePage(object):
         if len(illegal) > 0:
             err.append(self.msg["e_user_badname"])
 
+        # mail okay?
+        if mail.count("@") != 1 and mail.count(".") < 1:
+            err.append(self.msg["e_mail_invalid"])
+        mail = mail.replace(" ", "")
+        mail = mail.replace("<", "")
+        mail = mail.replace(">", "")
+
+        # url okay?
+        if len(url) > 1 and not url.startswith("http"):
+            err.append(self.msg["e_url_invalid"])
+        elif len(url) <= 1:
+            url = "-"
+        url = url.replace(" ", "")
+        url = url.replace("<", "")
+        url = url.replace(">", "")
+
         # username or mail already registered?
         for entry in user_data:
-            username, pwd_hash, usermail, rank = entry.split(":")
+            if entry.count(" ") != 7: continue
+            username, pwd_hash, usermail, userurl, rank, session, time, ip = entry.split()
             if username == user:
                 err.append(self.msg["e_user_exists"])
                 break
@@ -767,6 +848,26 @@ class SimplePage(object):
         if pwd != pwd_check:
             err.append(self.msg["e_pwd_mismatch"])
 
+        # weak password?
+        words = []
+        for lang in self.cnf["languages"]:
+            word_path = os.path.join(
+                os.environ["DOCUMENT_ROOT"],
+                self.cnf["base_dir"],
+                "words." + lang + "." + self.cnf["file_ext"]
+            )
+            file = open(word_path, mode="r", encoding="utf-8")
+            words += list(file.readlines())
+            file.close()
+        words = set([w.lower().strip() for w in words])
+        special = re.findall("[^a-zA-Z0-9]", pwd)
+        nums = re.findall("[\d]", pwd)
+        upper = re.findall("[A-Z]", pwd)
+        word_att = pwd.lower in words
+        short = len(pwd) < 8
+        if not special or not nums or not upper or word_att or short:
+            self.data["warn"] += self.msg["w_weak_pwd"]
+
         # terms accepted?
         if not terms:
             err.append(self.msg["e_terms"])
@@ -775,17 +876,98 @@ class SimplePage(object):
             return
 
         pwd_hash = bcrypt.hashpw(bytes(pwd, encoding="utf-8"), bcrypt.gensalt())
-        user_entry = "{user}:{pwd_hash}:{mail}:visitor:\n".format(
+        user_entry = "{user} {pwd_hash} {mail} {url} visitor - 0 -\n".format(
             user=user,
             pwd_hash=pwd_hash.decode("utf-8"),
             mail=mail,
+            url=url,
         )
         userfile = open(path, mode="a", encoding="utf-8")
         userfile.write(user_entry)
         userfile.close()
 
+    def post_user(self):
+        """ handle updating user data  ..."""
+
+        # read the fields
+        user = self.data.get("user")
+        pwd = self.post.getvalue("pwd", "")
+        pwd_new = self.post.getvalue("pwd_new", "")
+        pwd_check = self.post.getvalue("pwd_check", "")
+        url = self.post.getvalue("url", "-")
+        mail = self.post.getvalue("mail", "")
+
+        self.data["error"] = err = []
+
+        # get current users
+        path = os.path.join(
+            os.environ["DOCUMENT_ROOT"],
+            self.cnf["base_dir"],
+            "users." + self.cnf["file_ext"]
+        )
+        userfile = open(path, mode="r", encoding="utf-8")
+        user_data = userfile.readlines()
+        userfile.close()
+
+        edited_user_data = []
+        for entry in user_data:
+            if entry.count(" ") != 7: continue
+            user_name, pwd_hash, old_mail, old_url, rank, session, expires, ip = entry.split()
+            if user_name == user:
+
+                # changing password?
+                if len(pwd) + len(pwd_check) + len(pwd_new) > 0:
+                    # check current password:
+                    check = bcrypt.checkpw(
+                        bytes(pwd, encoding="utf-8"),
+                        bytes(pwd_hash, encoding="utf-8")
+                    )
+                    # passwords okay?
+                    if not check or pwd_new != pwd_check:
+                        err.append(self.msg["e_pwd_mismatch"])
+                    # the new password_hash
+                    else:
+                        pwd_hash = bcrypt.hashpw(bytes(pwd_new, encoding="utf-8"), bcrypt.gensalt())
+                        pwd_hash = pwd_hash.decode(encoding="utf-8")
+
+                if mail.count("@") != 1 and mail.count(".") < 1:
+                    err.append(self.msg["e_mail_invalid"])
+
+                if len(url) > 1 and not url.startswith("http"):
+                    err.append(self.msg["e_url_invalid"])
+                elif len(url) <= 1:
+                    url = "-"
+
+                if len(err) == 0:
+                    user_entry = " ".join([
+                        user,
+                        pwd_hash,
+                        mail,
+                        url,
+                        rank,
+                        session,
+                        expires,
+                        ip
+                    ])
+                else:
+                    user_entry = entry
+
+                edited_user_data.append(user_entry)
+
+            else:
+                edited_user_data.append(entry)
+
+        userfile = open(path, mode="w", encoding="utf-8")
+        userfile.writelines(edited_user_data)
+        userfile.close()
+
     def post_edit(self):
         """ handle the page edit, store old version write new version"""
+
+        # check user rank for writing rights:
+        if self.data.get("rank") not in ["writer", "owner"]:
+            return
+
         content = self.post.getvalue("content")
 
         dir = os.path.join(
@@ -835,23 +1017,34 @@ class SimplePage(object):
         content = content.split("\n")
 
         # prepare meta information ...
+        if os.environ.get('HTTP_X_FORWARDED_FOR'):
+            ip = os.environ['HTTP_X_FORWARDED_FOR']
+            ip = ip.split(',')[0].strip()
+        else:
+            ip = os.environ.get('REMOTE_ADDR', "NO_IP")
+
         meta = [
-            self.data["user"],
-            str(time.time())
+            str(self.data.get("user")),
+            str(time.time()),
+            ip
         ]
 
         file = open(cur_name, "w", encoding="utf-8")
         file.write("\n".join(content + meta))
         file.close()
 
-        self.parse_current()
-
         lock_file = os.path.join(dir, ".lock")
         if os.path.exists(lock_file):
             os.remove(lock_file)
 
     def post_comment(self):
+        """ comment posting """
 
+        # does the current user have sufficient rights?
+        if self.data.get("rank") not in ["commenter", "writer", "owner"]:
+            return
+
+        # retrieve the fields
         username = self.post.getvalue("user")
         url = self.post.getvalue("url")
         check = self.post.getvalue("check")
@@ -861,6 +1054,7 @@ class SimplePage(object):
         
         self.data["error"] = []
 
+        # check for the presence of field data ...
         if not username:
             self.data["error"].append(self.msg["e_user_needed"])
         if not url: url = ""
@@ -916,14 +1110,14 @@ class SimplePage(object):
         user_data = users.readlines()
         users.close()
         for user in user_data:
-            user = user.split(":")[0]
+            user = user.split()[0]
             if user == username:
                 if user != self.data.get("user"):
                     self.data["error"].append(self.msg["e_user_registered"])
                     return
                 break
 
-
+        # build relevant filenames
         dir = os.path.join(
             os.environ["DOCUMENT_ROOT"],
             self.cnf["base_dir"],
@@ -956,7 +1150,8 @@ class SimplePage(object):
             num = str(highest).zfill(6),
             ext = self.cnf["file_ext"]
         )
-        
+
+        # store comment
         comment_data = "\n".join([username, url, now, user_ip, comment])
 
         path = os.path.join(dir, filename)
@@ -964,12 +1159,14 @@ class SimplePage(object):
         file.write(comment_data),
         file.close()
 
-    def post_upload(self):
-        import shutil
+    def post_files(self):
+        """ handle the post requests of the files form """
 
-        if "file" not in self.post: return
-        fileitem = self.post["file"]
-        if not fileitem.file: return
+        # does the current user have sufficient rights?
+        if self.data.get("rank") not in ["writer", "owner"]:
+            return
+
+        import shutil
 
         dir = os.path.join(
             os.environ["DOCUMENT_ROOT"],
@@ -978,22 +1175,96 @@ class SimplePage(object):
             self.name
         )
 
-        path = os.path.join(dir, fileitem.filename)
-        num = 1
-        while os.path.exists(path):
-            if "." in fileitem.filename:
-                *name, ext = fileitem.filename.split(".")
-                name = ".".join(name)
-                ext = "." + ext
-            else:
-                name = fileitem.filename
-                ext = ""
-            new_name = name + str(num) + ext
-            path = os.path.join(dir, new_name)
-            num += 1
+        selection = self.post.getvalue("sel")
+        if selection and not isinstance(selection, list):
+            selection = [selection]
 
-        with open(path, 'wb') as file:
-            shutil.copyfileobj(fileitem.file, file, 100000)
+        # remove a file
+        delete = self.post.getvalue("del")
+        if delete:
+
+            for filename in selection:
+                path = os.path.join(dir, filename)
+                if os.path.isfile(path):
+                    os.remove(path)
+
+        # parse target
+        target = self.post.getvalue("target")
+        new_dir = self.directory + [self.name]
+        if target:
+            count = 0
+            for char in target:
+                if char != "_": break
+                count += 1
+
+            target = target[count:]
+            target = target.replace("_", "/")
+
+            if count == 0:
+                new_dir = []
+
+            if count == 1:
+                pass
+
+            if count > 1:
+                count -= 1
+                new_dir = new_dir[:-count]
+
+            new_dir = os.path.join(
+                os.environ["DOCUMENT_ROOT"],
+                *new_dir,
+                target
+            )
+
+        # move a file to a different folder
+        move = self.post.getvalue("move")
+        if move and target and selection:
+            for filename in selection:
+                old_path = os.path.join(dir, filename)
+                new_path = os.path.join(new_dir, filename)
+
+        # move a file to a different folder
+        copy = self.post.getvalue("copy")
+        if copy and target and selection:
+            for filename in selection:
+                old_path = os.path.join(dir, filename)
+                new_path = os.path.join(new_dir, filename)
+
+        # handle a file upload ...
+        if "file" not in self.post: return
+
+        files = self.post["file"]
+        if not isinstance(files, list):
+            files = [files]
+
+        dir = os.path.join(
+            os.environ["DOCUMENT_ROOT"],
+            self.cnf["base_dir"],
+            *self.directory,
+            self.name
+        )
+
+        for file in files:
+            if not file.file: continue
+            if len(file.filename) < 1: continue
+
+
+            path = os.path.join(dir, file.filename)
+            num = 1
+            while os.path.exists(path):
+                if "." in file.filename:
+                    *name, ext = file.filename.split(".")
+                    name = ".".join(name)
+                    ext = "." + ext
+                else:
+                    name = file.filename
+                    ext = ""
+                new_name = name + str(num) + ext
+                path = os.path.join(dir, new_name)
+                num += 1
+
+            with open(path, 'wb') as new_file:
+                shutil.copyfileobj(file.file, new_file, 100000)
 
     def post_settings(self):
         """ handle the post data for the setting page"""
@@ -1037,11 +1308,91 @@ class SimplePage(object):
             acl.write(acl_data)
             acl.close()
 
-    def query_logout(self):
+    def query_del(self):
+        num = None
+        for entry in self.query:
+            if entry.startswith("del"):
+                num = entry.split("=")[-1]
+                break
+
+        if not num or not num.isdigit():
+            return
+
+        if self.data.get("rank") not in ["writer", "owner"]:
+            if self.data.get("user"):
+                self.e403()
+                return
+            else:
+                self.e401()
+                return
+
+        num = num.zfill(6)
+
+        filename = self.cnf["comments"] + "." + num + "." + self.cnf["file_ext"]
+
+        path = os.path.join(
+            os.environ["DOCUMENT_ROOT"],
+            self.cnf["base_dir"],
+            *self.directory,
+            self.name,
+            filename
+        )
+
+        if os.path.isfile(path):
+            os.remove(path)
+
+    def query_logout(self, session_id):
+
+        root = os.environ["DOCUMENT_ROOT"]
+        base = self.cnf.get("base_dir")
+        users = "users." + self.cnf["file_ext"]
+        path = os.path.join(root, base, users)
+        user_file = open(path, "r", encoding="utf-8")
+        user_data = user_file.readlines()
+        user_file.close()
+
+        logged_out = False
+        new_data = []
+        for entry in user_data:
+            if entry.count(" ") != 7: continue
+            user, pwd_hash, mail, url, rank, stored_id, expires, ip = entry.split()
+            if stored_id == session_id:
+                stored_id = " "
+                expires = "0"
+                ip = " "
+                logged_out = True
+
+            new_entry = [user, pwd_hash, mail, url, rank, stored_id, expires, ip]
+            new_entry = " ".join(new_entry) + "\n"
+            new_data.append(new_entry)
+
+        if logged_out:
+            sessions_file = open(path, "w", encoding="utf-8")
+            sessions_file.writelines(new_data)
+            sessions_file.close()
+
+    def cookie_handler(self):
+        """ The user supplied a cookie - is it valid? """
+
         cookie = os.environ.get("HTTP_COOKIE")
 
         if cookie:
             session_id = cookie.split("=")[-1]
+
+            # validate cookie content (it is user input after all)
+            valid = re.match(
+                "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                session_id
+            )
+            if not valid:
+                return
+
+            # did the user request a logout?
+            if self.query[0] == "logout":
+                self.query_logout(session_id)
+                return
+
+            # check validity of cookie and assign user data
             root = os.environ["DOCUMENT_ROOT"]
             base = self.cnf.get("base_dir")
             users = "users." + self.cnf["file_ext"]
@@ -1050,52 +1401,14 @@ class SimplePage(object):
             user_data = user_file.readlines()
             user_file.close()
 
-            new_data = []
             for entry in user_data:
-                if entry.count(":") != 6: continue
-                user, pwd_hash, mail, rank, stored_id, expires, ip = entry.split(":")
-                if stored_id == session_id:
-                    stored_id = " "
-                    expires = "0"
-                    ip = " "
-
-                new_entry = [user, pwd_hash, mail, rank, stored_id, expires, ip]
-                new_entry = ":".join(new_entry) + "\n"
-                new_data.append(new_entry)
-
-            sessions_file = open(path, "w", encoding="utf-8")
-            sessions_file.writelines(new_data)
-            sessions_file.close()
-
-    def cookie_handler(self):
-        """ The user supplied a cookie - is it valid? """
-
-        # logout if requested ...
-        if self.query[0] == "logout":
-            self.query_logout()
-
-        root = os.environ["DOCUMENT_ROOT"]
-        base = self.cnf.get("base_dir")
-        if base.startswith("/"):
-            base = base[1:]
-
-        cookie = os.environ.get("HTTP_COOKIE")
-
-        if cookie:
-            session_id = cookie.split("=")[-1]
-
-            users = "users." + self.cnf["file_ext"]
-            path = os.path.join(root, base, users)
-            user_file = open(path, "r", encoding="utf-8")
-            user_data = user_file.readlines()
-            user_file.close()
-
-            for entry in user_data:
-                if entry.count(":") < 6: continue
-                user, pwd_hash, mail, rank, stored_id, expires, ip = entry.split(":")
+                if entry.count(" ") != 7: continue
+                user, pwd_hash, mail, url, rank, stored_id, expires, ip = entry.split()
                 if stored_id == session_id:
                     self.data["user"] = user
                     self.data["login"] = True
+                    self.data["user_url"] = url if url != "-" else ""
+                    self.data["user_mail"] = mail
 
                     # set global rank (if enabled)
                     if self.cnf.get("rank_override"):
@@ -1103,11 +1416,12 @@ class SimplePage(object):
                     break
 
     def check_acl(self):
-        """ retrieve ACL for this page or a parent page """
+        """ find and check the appropriate access control list """
 
-        # find the relevant acl
         acl = []
         local_dir = [d for d in self.directory] + [self.name]
+
+        # traverse the directory tree up until one is found
         for i in range(len(local_dir) + 1):
             path = os.path.join(
                 os.environ["DOCUMENT_ROOT"],
@@ -1122,9 +1436,8 @@ class SimplePage(object):
                 acl = file.readlines()
                 file.close()
 
-                if not acl[0].startswith("!"):
-                    break
-                else:
+                # check if that acl is a 'link'
+                while acl[0].startswith("!"):
                     dir = acl[0][1:].strip()
                     path = os.path.join(
                         os.environ["DOCUMENT_ROOT"],
@@ -1136,9 +1449,9 @@ class SimplePage(object):
                         file = open(path, mode="r", encoding="utf-8")
                         acl = file.readlines()
                         file.close()
-                    break
+                    else: break
 
-        # check the acl
+        # retrieve user rank from selected access control list
         rank = None
         for entry in acl:
             entry = entry.strip()
@@ -1174,32 +1487,40 @@ class SimplePage(object):
         if not self.lang:
             default = self.cnf["languages"][0]
             user_languages = os.environ.get("HTTP_ACCEPT_LANGUAGE", default)
-            user_languages = re.split("[,;]", user_languages)[::-1]
-            q = 0
-            languages = []
-            for entry in user_languages:
-                if entry.startswith("q="):
-                    try:
-                        q = float(entry[2:])
-                    except ValueError:
-                        q = 0
-                else:
-                    lang = entry[0:2]
-                    languages.append([q, lang])
-            languages = sorted(languages, reverse=True)
-            for lang in languages:
-                if lang[1] in self.cnf["languages"]:
-                    self.lang = lang[1]
-            else:
-                self.lang = default
+            invalid = re.findall("[^a-zA-Z0-9\.\-,;=]+", user_languages)
 
+            # autodetect preferred language .. .
+            if not invalid:
+                user_languages = re.split("[,;]", user_languages)[::-1]
+                q = 0
+                languages = []
+                for entry in user_languages:
+                    if entry.startswith("q="):
+                        try:
+                            q = float(entry[2:])
+                        except ValueError:
+                            q = 0
+                    else:
+                        lang = entry[0:2]
+                        languages.append([q, lang.lower()])
+                languages = sorted(languages, reverse=True)
+                for lang in languages:
+                    if lang[1] in self.cnf["languages"]:
+                        self.lang = lang[1]
+                else:
+                    self.lang = default
+
+        # set message strings
         if self.lang == "de":
             self.msg = S_DE
         if self.lang == "en":
             self.msg = S_EN
+        else:
+            self.msg = S_EN
 
     def headers(self, status="200 OK", cont_type="text/plain"):
-        """ printing the header to the http stream """
+        """ prepare the header string """
+
         header = "Status: " + status + "\n"
         header += "Content-Type: " + cont_type + "\n"
 
@@ -1224,8 +1545,9 @@ class SimplePage(object):
             self.content.append(line)
         file.close()
 
-    def lang_selector(self):
-        """ language selector """
+    def page_menu(self):
+        """ build pages menu and language selector """
+
         content = [
             '<div class="main">'
             '<div class="lang">'
@@ -1247,10 +1569,10 @@ class SimplePage(object):
 
         link_base = '<a href="{url}"><img {cls}src="{src}" title="{txt}" alt="{txt}"/></a>'
 
-        # adding the edit icon ...
         if self.data.get("rank") in ["writer", "owner"]:
+            # adding the edit icon ...
             url = "/" + base_url + "." + self.lang + "?edit"
-            src = src = "/" + self.cnf["base_dir"] + "/edit.png"
+            src = "/" + self.cnf["base_dir"] + "/edit.png"
 
             edit_button = link_base.format(
                 url=url,
@@ -1259,9 +1581,23 @@ class SimplePage(object):
                 cls='class="icon_button"'
             )
             content.append(edit_button)
+
+            # and the files icon
+            url = "/" + base_url + "." + self.lang + "?files"
+            src = "/" + self.cnf["base_dir"] + "/folder.png"
+
+            files_button = link_base.format(
+                url=url,
+                src=src,
+                txt=self.msg["edit_title"],
+                cls='class="icon_button"'
+            )
+            content.append(files_button)
+
+        # adding a setting button
         if self.data.get("rank") == "owner":
             url = "/" + base_url + "." + self.lang + "?settings"
-            src = src = "/" + self.cnf["base_dir"] + "/settings.png"
+            src = "/" + self.cnf["base_dir"] + "/settings.png"
 
             set_button = link_base.format(
                 url=url,
@@ -1271,6 +1607,20 @@ class SimplePage(object):
             )
             content.append(set_button)
 
+        # user management button
+        if self.data.get("user"):
+            url = "/" + base_url + "." + self.lang + "?user"
+            src = "/" + self.cnf["base_dir"] + "/user.png"
+
+            user_button = link_base.format(
+                url=url,
+                src=src,
+                txt=self.msg["user_settings"],
+                cls='class="icon_button"'
+            )
+            content.append(user_button)
+
+        # this is the language selector
         for lang in self.cnf["languages"]:
             path = os.path.join(
                 base_dir,
@@ -1318,8 +1668,8 @@ class SimplePage(object):
         ]
 
         if os.environ["REQUEST_METHOD"] == "POST":
-            if self.data["error"]:
-                content += self.data["error"] + ["<br/>"]
+            if self.data.get("error"):
+                content += ['<div class="error">'] + self.data["error"] + ["</div>"]
             else:
                 content += [self.msg["user_login"] + "<br/>"]
 
@@ -1356,11 +1706,72 @@ class SimplePage(object):
         content += ['</div>']
         self.content += content
 
+    def show_user_form(self):
+        """writes the login form into the page content list"""
+
+        # only logged in users can changes user data
+        if not self.data.get("user"):
+            self.e401()
+            return
+
+        # we need the currently stored data ...
+        path = os.path.join(
+            os.environ["DOCUMENT_ROOT"],
+            self.cnf["base_dir"],
+            "users." + self.cnf["file_ext"]
+        )
+
+        user_file = open(path, mode="r", encoding="utf-8")
+        user_data = user_file.readlines()
+        user_file.close()
+
+        user = self.data.get("user")
+        self.data["user_mail"] = mail = ""
+        self.data["user_url"] = url = ""
+
+        for entry in user_data:
+            user_name, pwd_hash, mail_stored, url_stored, *session = entry.split()
+            if user == user_name:
+                mail = mail_stored
+                url = url_stored
+                break
+
+        content = [
+            '<div class="main">',
+            '<h2>' + self.msg["user_settings"] + '</h2>',
+        ]
+
+        if os.environ["REQUEST_METHOD"] == "POST":
+            if self.data.get("error"):
+                content += ['<div class="error">'] + self.data["error"] + ["</div>"]
+
+        content += [
+            '<form method="post">',
+            '<p>' + self.msg["username"] + '<br/>',
+            '<b>' + user + '</b></p>',
+            '<p>' + self.msg["mail"] + '<br/>',
+            '<input type="email" name="mail"  value="' + mail + '"/></p>',
+            '<p>' + self.msg["url"] + '<br/>',
+            '<input type="url" name="url"  value="' + url + '"/></p>',
+            '<p>' + self.msg["password_old"] + '<br/>',
+            '<input type="password" name="pwd" /></p>',
+            '<p>' + self.msg["password_new"] + '<br/>',
+            '<input type="password" name="pwd_new" /></p>',
+            '<p>' + self.msg["password_check"] + '<br/>',
+            '<input type="password" name="pwd_check" /></p>',
+            '<button name="' + self.msg["send"] + '">' + self.msg["send"] + '</button>',
+            '</form>',
+        ]
+        content += ['</div>']
+        self.content += content
+
+
     def show_registration_form(self):
         """writes the registration form into the page content list"""
 
         created = False
         user = ""
+        url = ""
         mail = ""
         content = [
             '<div class="main">',
@@ -1370,20 +1781,27 @@ class SimplePage(object):
         if os.environ["REQUEST_METHOD"] == "POST":
             user = self.post.getvalue("user", "")
             mail = self.post.getvalue("mail", "")
+            url = self.post.getvalue("url", "")
 
-            if self.data["error"]:
-                content += self.data["error"] + ["<br/>"]
+            if self.data.get("error"):
+                content += ['<div class="error">'] + ["".join(self.data["error"])] + ["</div>"]
             else:
+                if self.data.get("warn"):
+                    content += ['<div class="warn">'] + ["".join(self.data["warn"])] + ["</div>"]
                 content += [self.msg["user_created"] + "<br/>"]
                 created = True
 
         if not created:
+            if self.data.get("warn"):
+                content += ['<div class="warn">'] + self.data["warn"] + ["</div>"]
             content += [
                 '<form method="post">',
                 '<p>' + self.msg["username"] + '<br/>',
                 '<input type="text" name="user" value="' + user + '"/></p>',
                 '<p>' + self.msg["mail"] + '<br/>',
                 '<input type="email" name="mail"  value="' + mail + '"/></p>',
+                '<p>' + self.msg["url"] + '<br/>',
+                '<input type="url" name="url"  value="' + url + '"/></p>',
                 '<p>' + self.msg["password"] + '<br/>',
                 '<input type="password" name="pwd" /></p>',
                 '<p>' + self.msg["password_check"] + '<br/>',
@@ -1410,9 +1828,10 @@ class SimplePage(object):
             '<h3>' + self.msg["comment_title"] + '</h3>',
         ]
 
-        user = ""
+        user = self.data.get("user", "")
         comment = ""
-        url = ""
+        url = self.data.get("user_url", "")
+
         if os.environ["REQUEST_METHOD"] == "POST":
             if "user" in self.post:
                 user = self.post.getvalue("user")
@@ -1422,7 +1841,7 @@ class SimplePage(object):
                 url = self.post.getvalue("url")
 
             if self.data.get("error"):
-                content += self.data["error"] + ["<br/>"]
+                content += ['<div class="error">'] + self.data["error"] + ["</div>"]
             elif len(comment) > 0:
                 content += [self.msg["comment_created"] + "<br/>"]
                 created = True
@@ -1508,18 +1927,19 @@ class SimplePage(object):
         self.data["warn"] = []
 
         data = []
-
         base = os.environ["DOCUMENT_ROOT"]
-        filename = "{name}.{lang}.{ext}".format(
-            name=self.cnf["cur_name"],
-            lang=self.lang,
-            ext=self.cnf["file_ext"],
-        )
+
         dir = os.path.join(
             base,
             self.cnf["base_dir"],
             *self.directory,
             self.name
+        )
+
+        filename = "{name}.{lang}.{ext}".format(
+            name=self.cnf["cur_name"],
+            lang=self.lang,
+            ext=self.cnf["file_ext"],
         )
         path = os.path.join(dir, filename)
         lock_file = os.path.join(dir, ".lock")
@@ -1535,7 +1955,8 @@ class SimplePage(object):
         # check for the lockfile
         if not self.data["error"] and os.path.exists(lock_file):
             lock = open(lock_file, mode="r", encoding="utf-8")
-            lock_user, lock_time = lock.read().split(":")
+            lock_user, lock_time = lock.read().split()
+            lock.close()
             lock_time = float(lock_time)
             now = time.time()
 
@@ -1577,7 +1998,7 @@ class SimplePage(object):
         else:
             # create new lock
             lock = open(lock_file, mode="w", encoding="utf-8")
-            lock_data = "{user}:{now}".format(
+            lock_data = "{user} {now}".format(
                 user=self.data["user"],
                 now=time.time()
             )
@@ -1592,13 +2013,16 @@ class SimplePage(object):
 
                 data = [l.replace("\r", "") for l in data]
                 data = [l.replace("\n", "") for l in data]
-                data = data[:-2]
+                data = data[:-3]
 
             content = [
                 '<div class="main">',
                 '<h2>' + self.msg["edit_title"] + '</h2>',
             ]
-            content += self.data["warn"]
+
+            if self.data.get("warn"):
+                content += ['<div class="warn">'] + self.data["warn"] + ["</div>"]
+
             content += [
                 '<form method="post">',
                 '<textarea rows="15" cols="80" name="content">'
@@ -1624,18 +2048,70 @@ class SimplePage(object):
                 self.e401(info="files")
                 return
 
-        form = [
+        # display upload form
+        upload = [
             '<div class="main">',
             '<h2>' + self.msg["files"] + '</h2>',
             '<form enctype="multipart/form-data" method = "POST" >',
             '<input type = "hidden" name = "MAX_FILE_SIZE" value = "10240000" />',
             '<p> Choose file ... </p>',
-            '<input name="file", type="file" />',
-            '<p><button value="' + self.msg["send"] + '">' + self.msg["send"] + '</button></p>',
+            '<input name="file", type="file" multiple="true" />',
+            '<p><button value="upload" name="upload">' + self.msg["upload"] + '</button></p>',
+        ]
+        self.content += upload
+
+        # show files
+        dir = os.path.join(
+            os.environ["DOCUMENT_ROOT"],
+            self.cnf["base_dir"],
+            *self.directory,
+            self.name,
+            "*"
+        )
+
+        table = ['<div class="main"><table width="100%">']
+        files = glob.glob(dir)
+        for n, path in enumerate(files):
+            table += ["<tr>"]
+            path = path.replace("\\", "/")
+            *_, filename = path.split("/")
+            if filename.endswith(self.cnf["file_ext"]): continue
+            if not os.path.isfile(path): continue
+
+            size = os.path.getsize(path)
+            size_text = "0B"
+            for i, u in enumerate(["B", "KB", "MB", "GB", "TB"]):
+                if 1024 ** i > size: break
+                s = size / (1024 ** i)
+                size_text = str(round(s,1)) + u
+
+            marker = '<input type="checkbox" class="small" name="sel" value="'+filename+'" />'
+            row = "<td>{mark}</td><td>{file}</td><td>{size}</td>".format(
+                file=filename,
+                size=size_text,
+                mark=marker
+            )
+            table += [row]
+            table += ["</tr>"]
+        table += ["</table>", "</div>"]
+
+        file_actions = [
+            '<p><button value="del" name="del" type="submit">' + self.msg["delete_files"] + '</button></p>',
+            '<p>' + self.msg["move_copy_info"] + '</p>',
+            '<p><input type="text" name="target"/><br/>',
+            '<button value="move" name="move" type="submit">' + self.msg["move"] + '</button>'
+            '<button  value="copy" name="copy" type="submit">' + self.msg["copy"] + '</button></p>',
+        ]
+
+        if files:
+            self.content += table
+            self.content += file_actions
+
+        self.content += [
             '</form>',
             '</div>'
         ]
-        self.content += form
+
 
     def show_settings(self):
         """ write the setting screen to the page contents """
@@ -1779,6 +2255,11 @@ class SimplePage(object):
                 self.e401(info="read")
                 return
 
+        if self.query:
+            self.query_del()
+            if self.status != "200 OK":
+                return
+
         content = []
 
         filename = "{name}.{lang}.{ext}".format(
@@ -1795,7 +2276,7 @@ class SimplePage(object):
             filename
         )
 
-        if not os.path.exists(path):
+        if not os.path.isfile(path):
             self.parse_current()
 
         try:
@@ -1860,11 +2341,32 @@ class SimplePage(object):
                 url2=url2
             )
 
+            dc = ""
+            if self.data["rank"] in ["owner", "writer"]:
+                src = "/" + self.cnf["base_dir"] + "/del.png"
+                alt = self.msg["delete"]
+                num = os.path.split(comment)[1].split(".")[-2]
+                num = str(int(num))
+                url = "/".join([
+                    "",
+                    self.cnf["base_dir"],
+                    *self.directory,
+                    self.name
+                ])
+                url += "?del=" + num
+                img = '<img src="{src}" alt="{alt}" title="{alt}" />'.format(
+                    src=src,
+                    alt=alt
+                )
+                dc = '<a href="{url}">{img}</a>'.format(
+                    url=url,
+                    img=img
+                )
+
             next_comment = [
                 '<hr />',
                 '<div class="comment">',
-                title,
-                '<br/>',
+                dc + title + '<br/>',
                 text,
                 '</div>'
             ]
@@ -1892,23 +2394,24 @@ class SimplePage(object):
             ext=self.cnf["file_ext"],
         )
 
-        static_name = "{name}.{lang}.{ext}".format(
-            name=self.cnf["stat_name"],
-            lang=self.lang,
-            ext=self.cnf["file_ext"],
-        )
-
         path = os.path.join(dir, cur_name)
 
-        if os.path.exists(path):
+        if os.path.isfile(path):
             file = open(path, mode="r", encoding="utf-8")
-            parser = WikiParse(page, file.readlines())
+            data = file.readlines()
             file.close()
-            content = parser.parse()[:-2]
 
-            path = os.path.join(dir, static_name)
+            parser = WikiParse(page, data)
+            parsed = parser.parse()
+            filename = "{name}.{lang}.{ext}".format(
+                name=self.cnf["cur_name"],
+                lang=self.lang,
+                ext=self.cnf["file_ext"],
+            )
+
+            path = os.path.join(dir, path)
             file = open(path, mode="w", encoding="utf-8")
-            for line in content:
+            for line in parsed:
                 file.write(line + "\n")
             file.close()
 
@@ -1949,7 +2452,6 @@ class SimplePage(object):
         if self.status != "200 OK":
             return
 
-
         title = '<h2>' + self.msg["e_403_title"] + '</h2>'
         text = self.msg["e_403_generic"]
         if info == "read": text = self.msg["e_403_read"]
@@ -1986,7 +2488,7 @@ class SimplePage(object):
 def test():
     os.environ["DOCUMENT_ROOT"] = "C:/Users/Eric/Documents/Homepages/"
     os.environ["REQUEST_METHOD"] = "GET"
-    os.environ["REQUEST_URI"] = "/site/index"
+    os.environ["REQUEST_URI"] = "/site/test?parse"
 
 
 if __name__ == "__main__":
@@ -2008,7 +2510,7 @@ if __name__ == "__main__":
     # build the content
     page.html_head()
     page.nav_bar()
-    page.lang_selector()
+    page.page_menu()
 
     if os.environ.get("REDIRECT_STATUS") == "403":
         page.e403()
@@ -2018,6 +2520,8 @@ if __name__ == "__main__":
         page.show_login_form()
     elif page.query[0] == "register":
         page.show_registration_form()
+    elif page.query[0] == "user":
+        page.show_user_form()
     elif page.query[0] == "files":
         page.show_files()
     elif page.query[0] == "settings":
@@ -2042,7 +2546,7 @@ if __name__ == "__main__":
         page.show_comment_form()
 
     # debug line ..
-    page.content += [os.environ.get("REMOTE_ADDR")]
+    page.content += [page.data.get("info")]
     page.html_foot()
 
     # serve the page
